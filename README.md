@@ -1,4 +1,4 @@
-# muddyDINO 🦖⛰️
+# SideWalk Quality ️
 
 A sophisticated AI/ML demonstrator frontend for object detection and segmentation using **Grounding DINO** and **SAM 3**.
 
