@@ -261,11 +261,38 @@ def describe_area(image_path: str, bbox_pct: dict, feature_label: str = "object"
     data_uri = f"data:image/jpeg;base64,{img_base64}"
     
     print(f"Describing {feature_label} with InternVL using strict JSON OSM tagging...")
-    
     # Define tag sets
     surface_materials = "asphalt, concrete, concrete_plates, paving_stones, paving_slabs, sett, cobblestone, unhewn_cobblestone, bricks, stone, gravel, fine_gravel, compacted, dirt, ground, grass, sand, mud, wood, metal"
     structural_materials = "brick, brickwork, concrete, reinforced_concrete, stone, sandstone, limestone, granite, wood, timber_framing, steel, glass, metal, plaster, adobe, mud, clay, rammed_earth, prefab, block, tile, roof_tiles, shingle, bitumen, asphalt, slate, thatch, eternit, solar_panels, other"
-    smoothness_tags = "excellent, good, intermediate, bad, very_bad, horrible, very_horrible, impassable"
+    smoothness_tags = "excellent, good, intermediate, bad, very_bad, horrible, very_horrible, impassable, not_visible"
+    smoothness_definitions = """
+       Use the OpenStreetMap smoothness scale for the visible sidewalk or path surface:
+
+           excellent: new or nearly perfect surface, very regular and flat.
+           good: mostly smooth, with only minor wear or narrow cracks.
+           intermediate: usable but visibly imperfect, with patches, joints, shallow cracks, or mild unevenness.
+           bad: damaged or uncomfortable surface, with many cracks, bumps, potholes, or uneven areas.
+           very_bad: very rough or strongly uneven surface, difficult for wheelchairs, strollers, or small wheels.
+           horrible: extremely rough surface, passable only with difficulty.
+           very_horrible: severe obstacles, rubble, deep ruts, or broken surface; barely passable.
+           impassable: not usable as a sidewalk or path.
+           not_visible: the sidewalk/path surface is not visible enough to judge.
+       """
+    OSM_TO_SCORE = {
+        "excellent": 5,
+        "good": 5,
+        "intermediate": 4,
+        "bad": 3,
+        "very_bad": 2,
+        "horrible": 2,
+        "very_horrible": 1,
+        "impassable": 1,
+        "not_visible": None,
+    }
+    # # Define tag sets
+    # surface_materials = "asphalt, concrete, concrete_plates, paving_stones, paving_slabs, sett, cobblestone, unhewn_cobblestone, bricks, stone, gravel, fine_gravel, compacted, dirt, ground, grass, sand, mud, wood, metal"
+    # structural_materials = "brick, brickwork, concrete, reinforced_concrete, stone, sandstone, limestone, granite, wood, timber_framing, steel, glass, metal, plaster, adobe, mud, clay, rammed_earth, prefab, block, tile, roof_tiles, shingle, bitumen, asphalt, slate, thatch, eternit, solar_panels, other"
+    # smoothness_tags = "excellent, good, intermediate, bad, very_bad, horrible, very_horrible, impassable"
     
     # Select schema and materials based on Categories
     label_lower = feature_label.lower()
@@ -296,11 +323,11 @@ def describe_area(image_path: str, bbox_pct: dict, feature_label: str = "object"
         allowed_materials = surface_materials
         schema = {
             "feature": feature_label,
-            "surface": "<one value from list>",
-            "smoothness": "<one value from list>",
-            "wetness": "dry | damp | wet | standing_water",
-            "ruts": "yes | no",
-            "rut_severity": "none | low | medium | high"
+            "surface": "<one value from allowed surface list>",
+            "smoothness_osm": "<excellent | good | intermediate | bad | very_bad | horrible | very_horrible | impassable | not_visible>",
+            "smoothness_score_1_to_5": "<integer 1-5 or null>",
+            "confidence": "<low | medium | high>",
+            "visible_evidence": "<short reason based only on visible surface condition>"
         }
     else:
         # Default for other categories
@@ -315,15 +342,20 @@ def describe_area(image_path: str, bbox_pct: dict, feature_label: str = "object"
 
     import json
     schema_str = json.dumps(schema, indent=2)
-    
+
     system_msg = (
-        "Return ONLY a JSON object. No conversation. No markdown code blocks.\n"
+        "Return ONLY a valid JSON object. No conversation. No markdown code blocks.\n"
         f"Exact JSON schema to follow:\n{schema_str}\n\n"
-        f"Allowed materials/surfaces (if applicable):\n{allowed_materials}\n\n"
-        f"Allowed smoothness (if applicable):\n{smoothness_tags}\n\n"
-        "Allowed purpose: residential, commercial, public, others\n"
-        "For 'flat' and 'ruts', use ONLY 'yes' or 'no'.\n"
-        "Avoid 'unknown'. Use reasonable guesses if needed."
+        f"Allowed materials/surfaces, if applicable:\n{allowed_materials}\n\n"
+        f"Allowed OSM smoothness values, if applicable:\n{smoothness_tags}\n\n"
+        f"{smoothness_definitions}\n\n"
+        "Allowed purpose: residential, commercial, public, others.\n"
+        "For 'flat', use only 'yes' or 'no'.\n"
+        "Judge only the visible cropped region.\n"
+        "For sidewalks, paths, pavements, roads, or walkways, base smoothness only on visible surface regularity, flatness, cracks, potholes, bumps, rubble, missing pavement, ruts, and usability for pedestrians, wheelchairs, strollers, or small wheeled mobility devices.\n"
+        "Do not judge nearby road, curb, grass, wall, or building unless it is part of the target surface.\n"
+        "If the surface is too occluded, too small, blurry, or not visible enough, use smoothness_osm='not_visible' and smoothness_score_1_to_5=null.\n"
+        "Do not invent damage that is not visible."
     )
     
     response = model.create_chat_completion(
@@ -359,7 +391,20 @@ def describe_area(image_path: str, bbox_pct: dict, feature_label: str = "object"
                         break
     except Exception as e:
         print(f"Extraction error: {e}")
-        
+
+    # Optional: normalize smoothness_score_1_to_5 from the OSM class
+    try:
+        parsed = json.loads(description)
+
+        osm_value = parsed.get("smoothness_osm")
+        if osm_value in OSM_TO_SCORE:
+            parsed["smoothness_score_1_to_5"] = OSM_TO_SCORE[osm_value]
+
+        description = json.dumps(parsed, ensure_ascii=False)
+
+    except Exception as e:
+        print(f"JSON normalization error: {e}")
+
     return description.strip()
 
 def process_internvl(image_path: str, prompt: str):

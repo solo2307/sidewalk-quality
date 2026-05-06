@@ -190,7 +190,7 @@ const handleInference = async () => {
     
     const modelNames: Record<string, string> = {
       'grounding-dino': 'Grounding DINO',
-      'sam-3': 'SAM 3',
+      'sam-3': 'GroundedSAM',
       'internvl': 'InternVL'
     };
     
@@ -387,20 +387,50 @@ const parseOSMTags = (desc: string) => {
                           <span class="tag-val">{{ parseOSMTags(pred.description).surface }}</span>
                         </span>
                         
-                        <!-- Road Specific Tags -->
-                        <span v-if="parseOSMTags(pred.description).smoothness" class="osm-tag smoothness">
+                        <!-- Sidewalk / Road Surface Quality Tags -->
+                        <span
+                          v-if="parseOSMTags(pred.description).smoothness_osm || parseOSMTags(pred.description).smoothness"
+                          class="osm-tag smoothness"
+                        >
                           <span class="tag-key">smoothness</span>
-                          <span class="tag-val">{{ parseOSMTags(pred.description).smoothness }}</span>
+                          <span class="tag-val">
+                            {{ parseOSMTags(pred.description).smoothness_osm || parseOSMTags(pred.description).smoothness }}
+                          </span>
                         </span>
+
+                        <span
+                          v-if="parseOSMTags(pred.description).smoothness_score_1_to_5 !== undefined && parseOSMTags(pred.description).smoothness_score_1_to_5 !== null"
+                          class="osm-tag smoothness"
+                        >
+                          <span class="tag-key">score</span>
+                          <span class="tag-val">{{ parseOSMTags(pred.description).smoothness_score_1_to_5 }}/5</span>
+                        </span>
+
+                        <span v-if="parseOSMTags(pred.description).confidence" class="osm-tag confidence">
+                          <span class="tag-key">confidence</span>
+                          <span class="tag-val">{{ parseOSMTags(pred.description).confidence }}</span>
+                        </span>
+
+                        <span v-if="parseOSMTags(pred.description).visible_evidence" class="osm-tag-description">
+                          <span class="desc-label">Evidence:</span>
+                          {{ parseOSMTags(pred.description).visible_evidence }}
+                        </span>
+
+                        <!-- Optional old tags, only if your backend still returns them -->
                         <span v-if="parseOSMTags(pred.description).wetness" class="osm-tag wetness">
                           <span class="tag-key">wetness</span>
                           <span class="tag-val">{{ parseOSMTags(pred.description).wetness }}</span>
                         </span>
+
                         <span v-if="parseOSMTags(pred.description).ruts" class="osm-tag ruts">
                           <span class="tag-key">ruts</span>
                           <span class="tag-val">{{ parseOSMTags(pred.description).ruts }}</span>
                         </span>
-                        <span v-if="parseOSMTags(pred.description).rut_severity && parseOSMTags(pred.description).rut_severity !== 'none'" class="osm-tag rut-severity">
+
+                        <span
+                          v-if="parseOSMTags(pred.description).rut_severity && parseOSMTags(pred.description).rut_severity !== 'none'"
+                          class="osm-tag rut-severity"
+                        >
                           <span class="tag-key">severity</span>
                           <span class="tag-val">{{ parseOSMTags(pred.description).rut_severity }}</span>
                         </span>
